@@ -102,6 +102,26 @@
       "applies_to": ["scorecard"],
       "detection_hints": ["culture fit", "personality fit", "likeability", "gut feel", "one of us", "family-like", "looks the part", "vibe", "feel like one of us"],
       "recommendation_template": "Replace subjective 'culture fit' criteria with job-related, behaviorally-anchored competencies applied uniformly to all candidates."
+    },
+    {
+      "rule_id": "IND-POSH-SAFETY",
+      "title": "Workplace-safety / POSH-Act disclosure missing in customer-facing or female-facing roles",
+      "jurisdiction": "India-Central",
+      "citation": "Sexual Harassment of Women at Workplace (Prevention, Prohibition and Redressal) Act, 2013 (POSH Act); applies to ALL employment types including IT, manufacturing, hospitality, retail, hospitals, BPO, gig, and contract roles in establishments with 10+ workers.",
+      "category_default": "Gap",
+      "applies_to": ["job_posting", "scorecard"],
+      "detection_hints": ["late night shift", "night shift required", "rotational shifts", "field travel mandatory", "customer-facing role", "client entertainment", "alone with client", "must travel with manager", "no women's safety", "no transport provided", "no chaperone"],
+      "recommendation_template": "For roles involving night shifts, field travel, or customer-facing work, the posting should disclose POSH-Act compliance: an Internal Complaints Committee is in place, safety arrangements (transport, chaperone, or self-defence training) are provided, and the company's anti-harassment policy is available on request. Required under the POSH Act, 2013 for any workplace with 10+ employees."
+    },
+    {
+      "rule_id": "IND-EXPLOITATIVE-HOURS",
+      "title": "Exploitative working-hour / availability demand",
+      "jurisdiction": "India-Central",
+      "citation": "Code on Wages, 2019, §§ 13-14 (working hours, overtime, rest); state Shops and Establishments Acts (work-hour ceilings); Factories Act, 1948 (factory-floor roles); applies across IT, BPO, manufacturing, retail, gig and contract employment.",
+      "category_default": "Risk",
+      "applies_to": ["job_posting", "scorecard"],
+      "detection_hints": ["24x7 availability", "available 24/7", "always on call", "no work-life balance", "weekends mandatory", "no other commitments", "100 hour week", "12 hour shifts no breaks", "must be available anytime", "bonded to the company", "no outside engagements", "willing to work extreme hours"],
+      "recommendation_template": "Replace open-ended availability demands with the actual scheduled work pattern (e.g. '40 hours/week with occasional on-call rotation', '9-hour shifts with 30-minute breaks per Code on Wages 2019 §14'). The Code on Wages 2019 caps regular working hours and mandates rest periods; demands for 'no other commitments' or 'always-on' availability are exploitative and may not be lawful under state Shops and Establishments Acts."
     }
   ]
 }

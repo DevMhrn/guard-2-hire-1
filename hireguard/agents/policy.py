@@ -26,10 +26,18 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from pydantic import BaseModel, Field
 
 from hireguard.settings import settings
 from hireguard.state import Finding, HiringPacket, IntakeFacts, PipelineState
+from hireguard.tools.fetch_indian_statute import fetch_indian_statute
 from hireguard.tools.retrieve_rules import retrieve_rules
 
 log = logging.getLogger(__name__)
@@ -39,12 +47,30 @@ SYSTEM_PROMPT = _PROMPT_PATH.read_text(encoding="utf-8")
 
 TOP_K = 10
 
+# ─── LLM tool-calling configuration ─────────────────────────────────────────
+# Policy keeps `retrieve_rules` as a deterministic CODE call — the RAG pattern
+# is reliability-critical and the LLM has no business deciding whether to
+# retrieve. But `fetch_indian_statute` is genuinely LLM-decision territory:
+# the LLM may verify exact statute wording when a citation references a
+# recently-amended statute (RPwD 2016, Transgender 2019, HIV/AIDS 2017).
+POLICY_TOOLS = [fetch_indian_statute]
+TOOL_MAP = {t.name: t for t in POLICY_TOOLS}
+MAX_TOOL_ROUNDS = 2  # cap — typically 0-2 statute verifications per audit
+
 # Broad seed of Indian-law signal terms so retrieval ranks the relevant rules
-# even when the structured facts are sparse.
+# even when the structured facts are sparse. Covers all 12 IND-* rules across
+# every employment sector — IT, manufacturing, hospitality, sales, BPO,
+# healthcare, finance, gig / contract — grounded in Constitution Arts 14/15/16.
 _QUERY_SEED = (
     "gender caste religion community marital status pregnancy maternity "
     "disability transgender third gender HIV medical test age domicile "
-    "native language local subjective culture fit recruitment discrimination"
+    "native language local subjective culture fit recruitment discrimination "
+    "POSH Act 2013 internal complaints committee workplace safety night shift "
+    "field travel customer facing women safety harassment "
+    "working hours overtime 24x7 availability always on call exploitation "
+    "Code on Wages 2019 Shops Establishments Act Factories Act rest period "
+    "Constitution Article 14 15 16 equality non-arbitrariness "
+    "any employment IT manufacturing hospitality sales BPO healthcare finance gig contract"
 )
 
 # Maps each India-specific IntakeFacts signal field (populated with exact quotes
@@ -214,6 +240,99 @@ def _heuristic_findings(facts: IntakeFacts, packet: HiringPacket, rules: list[di
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# LLM tool-calling path — two-phase (reason w/ tools → structured output)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+async def _llm_findings_with_tools(
+    *,
+    facts: IntakeFacts,
+    packet: HiringPacket,
+    rules: list[dict],
+    errors: list[str],
+) -> list[Finding]:
+    """LLM path with tool-binding.
+
+    Architecture:
+      Phase 1 — Reason about which findings apply to the retrieved rules, and
+                optionally call fetch_indian_statute to verify exact wording
+                before citing recently-amended statutes. Capped at 2 rounds.
+      Phase 2 — Force structured output (PolicyFindings) from the accumulated
+                reasoning history.
+
+    `retrieve_rules` deliberately stays as a code-call (not tool-bound) — the
+    RAG retrieval pattern is reliability-critical for grounded findings; the
+    LLM should not decide whether to retrieve.
+    """
+    from hireguard.llm import get_claude
+
+    user_msg = _build_user_message(facts, packet, rules)
+
+    messages: list[BaseMessage] = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=user_msg),
+    ]
+
+    llm_with_tools = get_claude().bind_tools(POLICY_TOOLS)
+    total_tool_calls = 0
+    for round_n in range(MAX_TOOL_ROUNDS):
+        response: AIMessage = await llm_with_tools.ainvoke(messages)
+        messages.append(response)
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            break
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            args = tc.get("args", {}) or {}
+            tool = TOOL_MAP.get(name)
+            total_tool_calls += 1
+            log.info(
+                "policy_node: LLM tool call #%d → %s(%s)",
+                total_tool_calls,
+                name,
+                str(args)[:120],
+            )
+            if tool is None:
+                tool_out = f"unknown tool: {name}"
+                errors.append(f"[policy_node] LLM tried unknown tool {name!r}")
+            else:
+                try:
+                    tool_out = await tool.ainvoke(args)
+                except Exception as exc:  # noqa: BLE001
+                    tool_out = (
+                        f"tool error: {type(exc).__name__}: {str(exc)[:120]}"
+                    )
+                    errors.append(
+                        f"[policy_node] tool {name} errored: {type(exc).__name__}"
+                    )
+            messages.append(
+                ToolMessage(
+                    content=str(tool_out),
+                    tool_call_id=tc.get("id", f"call-{total_tool_calls}"),
+                )
+            )
+
+    if total_tool_calls:
+        errors.append(
+            f"[policy_node] LLM made {total_tool_calls} tool call(s) "
+            f"to fetch_indian_statute"
+        )
+
+    # Phase 2: force the typed PolicyFindings using the full reasoning history.
+    final_prompt = HumanMessage(
+        content=(
+            "Based on the rules I retrieved + any statute verifications you "
+            "performed, emit the final PolicyFindings — one Finding per "
+            "violation you are confident the packet commits. Cite ONLY rule_ids "
+            "from the retrieved set. Quote exact evidence from the packet."
+        )
+    )
+    llm_typed = get_claude().with_structured_output(PolicyFindings)
+    result: PolicyFindings = await llm_typed.ainvoke(messages + [final_prompt])
+    return result.findings
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Node
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -235,14 +354,9 @@ async def policy_node(state: PipelineState) -> dict:
     use_llm = bool(settings()["ANTHROPIC_API_KEY"])
     if use_llm:
         try:
-            from hireguard.llm import get_claude
-
-            llm = get_claude().with_structured_output(PolicyFindings)
-            user_msg = _build_user_message(facts, packet, rules)
-            result: PolicyFindings = await llm.ainvoke(
-                [("system", SYSTEM_PROMPT), ("user", user_msg)]
+            findings = await _llm_findings_with_tools(
+                facts=facts, packet=packet, rules=rules, errors=errors
             )
-            findings = result.findings
         except Exception as exc:  # never fail the audit on an LLM hiccup
             log.warning("policy_node: LLM call failed (%s); using heuristic fallback", exc)
             errors.append(f"[policy_node] LLM failed, heuristic fallback used: {exc}")

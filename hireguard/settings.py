@@ -41,11 +41,25 @@ if not os.environ.get("LANGCHAIN_API_KEY"):
     for k in ("LANGSMITH_API_KEY", "LANGSMITH_ENDPOINT"):
         os.environ.pop(k, None)
 
-# Allow our Pydantic models to round-trip through the LangGraph checkpointer
-# without triggering the "unregistered type" deserialization warning.
-os.environ.setdefault(
-    "LANGGRAPH_ALLOWED_MSGPACK_MODULES",
-    "hireguard.state",
+# Suppress the harmless "Deserializing unregistered type hireguard.state.*"
+# deprecation warnings from the LangGraph Postgres checkpointer. The env-var
+# allowlist isn't supported in our langgraph version — the proper fix is a
+# constructor arg we don't want to thread through. The warning is documenting
+# a future-only breaking change; until then it's just log noise.
+import logging as _logging  # noqa: E402
+
+
+class _SuppressHireguardMsgpackWarning(_logging.Filter):
+    """Drop the per-type 'Deserializing unregistered type hireguard.state.X'
+    warnings that fire once per round-trip through the Postgres checkpointer."""
+
+    def filter(self, record: _logging.LogRecord) -> bool:  # noqa: D401
+        msg = record.getMessage()
+        return "Deserializing unregistered type hireguard.state" not in msg
+
+
+_logging.getLogger("langgraph.checkpoint.serde.jsonplus").addFilter(
+    _SuppressHireguardMsgpackWarning()
 )
 
 

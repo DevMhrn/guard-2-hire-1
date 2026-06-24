@@ -31,7 +31,7 @@ SAMPLES_DIR = Path("hireguard/samples")
 # ──────────────────────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="HireGuard v2",
+    page_title="SafeHire — Indian Hiring Compliance Auditor",
     layout="wide",
     page_icon="🛡",
     initial_sidebar_state="expanded",
@@ -170,14 +170,14 @@ header[data-testid="stHeader"] {background: transparent;}
 st.markdown(
     """
 <div class="hero">
-  <h1>🛡 HireGuard <span class="v">v2</span></h1>
-  <p>Multi-agent AI auditor for <b>Indian hiring-compliance</b> — reviews job posting, comp band, and interview scorecard for violations of Indian employment law, with a human approval gate before any audit is finalised.</p>
+  <h1>🛡 SafeHire</h1>
+  <p>Multi-agent AI auditor for <b>Indian hiring compliance</b> — reviews job posting, comp band, and interview scorecard against the Constitution and Indian employment statutes, with a human approval gate before any audit is finalised. Works across IT, manufacturing, hospitality, sales, BPO, healthcare, finance, internships, and gig employment.</p>
   <div class="badges">
     <span class="badge">LangGraph</span>
     <span class="badge">Claude Sonnet</span>
     <span class="badge">Supabase + pgvector</span>
     <span class="badge">LangSmith</span>
-    <span class="badge">🇮🇳 India-Central Law</span>
+    <span class="badge">🇮🇳 Constitution Arts. 14 / 15 / 16</span>
   </div>
 </div>
 """,
@@ -388,19 +388,42 @@ def _model_name(serialized: dict | None) -> str:
 
 
 class StreamlitLogHandler(AsyncCallbackHandler):
-    """Streams LLM + tool events from anywhere inside the graph into the
-    Streamlit live log. Runs in the same asyncio loop as the pipeline."""
+    """Captures LLM + tool events from anywhere inside the graph (including
+    HTTP background-thread callbacks) and buffers them as HTML strings.
+
+    IMPORTANT: this handler does NOT call any Streamlit APIs directly. LangChain
+    fires callbacks from httpx's ThreadPoolExecutor threads, which do not have
+    Streamlit's ScriptRunContext. Calling `st.markdown(...)` from those threads
+    raises `NoSessionContext()` and the update is lost.
+
+    Instead: the handler appends formatted lines to a shared `list[str]` (which
+    is thread-safe for `append` in CPython). The main Streamlit thread reads
+    the buffer between LangGraph events and re-renders the log atomically.
+    """
 
     def __init__(
         self,
-        push: Callable[[str], None],
+        buffer: list[str],
         get_current_node: Callable[[], str | None],
     ):
         super().__init__()
-        self.push = push
+        self.buffer = buffer  # shared with the main thread
         self.get_node = get_current_node
         self._llm_t0: dict[UUID, tuple[str, float]] = {}
         self._tool_t0: dict[UUID, tuple[str, float]] = {}
+
+    def _emit(self, line: str) -> None:
+        """Thread-safe buffer append (no Streamlit call from background threads)."""
+        try:
+            self.buffer.append(line)
+        except Exception:
+            pass  # never let logging crash the pipeline
+
+    # Backwards-compat shim — older code that constructs the handler with a
+    # `push=` callable still works (the test_tools tests use the buffer form).
+    @property
+    def push(self) -> Callable[[str], None]:
+        return self._emit
 
     # ── LLM lifecycle ──
     async def on_llm_start(
@@ -542,30 +565,44 @@ def _attr(obj, key, default=None):
 
 def _format_node_log(node: str, payload: dict) -> tuple[str, list[str]]:
     """Return (summary_line, extra_lines) — both raw text. Streamlit-side will
-    HTML-escape and wrap with colours."""
+    HTML-escape and wrap with colours.
+
+    Extras are deliberately rich: actual extracted phrases, rule_ids that
+    fired, evidence snippets. The audience can read WHAT the agents saw, not
+    just COUNTS of what they saw.
+    """
     if node == "intake":
         facts = payload.get("facts")
         if facts is None:
             return ("Intake — no facts returned", [])
         jurisdiction = _attr(facts, "jurisdiction", "?")
-        age_n = len(_attr(facts, "age_coded_phrases", []) or [])
-        gender_n = len(_attr(facts, "gender_restrictive_phrases", []) or [])
-        caste_n = len(_attr(facts, "caste_or_community_signals", []) or [])
-        marital_n = len(_attr(facts, "marital_or_pregnancy_signals", []) or [])
-        medical_n = len(_attr(facts, "medical_or_hiv_test_signals", []) or [])
-        rpwd_n = len(
-            _attr(facts, "non_essential_physical_requirements", []) or []
-        )
+        age = _attr(facts, "age_coded_phrases", []) or []
+        gender = _attr(facts, "gender_restrictive_phrases", []) or []
+        caste = _attr(facts, "caste_or_community_signals", []) or []
+        marital = _attr(facts, "marital_or_pregnancy_signals", []) or []
+        medical = _attr(facts, "medical_or_hiv_test_signals", []) or []
+        rpwd = _attr(facts, "non_essential_physical_requirements", []) or []
+        domicile = _attr(facts, "domicile_or_language_restriction", []) or []
+        subj = _attr(facts, "subjective_scorecard_criteria", []) or []
         pii = _attr(facts, "pii_redacted_labels", []) or []
         injection = bool(_attr(facts, "injection_attempt_detected", False))
-        subj_n = len(_attr(facts, "subjective_scorecard_criteria", []) or [])
-        summary = (
-            f"Intake done — jurisdiction={jurisdiction}, "
-            f"age:{age_n} gender:{gender_n} caste:{caste_n} "
-            f"marital:{marital_n} medical:{medical_n} disability:{rpwd_n} "
-            f"subjective-scorecard:{subj_n}"
-        )
+        summary = f"Intake done — jurisdiction=<b>{jurisdiction}</b>"
         extras = []
+        # Show actual extracted phrases per India-signal field
+        for label, vals in [
+            ("age", age),
+            ("gender", gender),
+            ("caste/community", caste),
+            ("marital/pregnancy", marital),
+            ("medical/HIV", medical),
+            ("disability/RPwD", rpwd),
+            ("domicile/language", domicile),
+            ("subjective scorecard", subj),
+        ]:
+            if vals:
+                preview = ", ".join(repr(v) for v in vals[:3])
+                more = f" (+{len(vals) - 3} more)" if len(vals) > 3 else ""
+                extras.append(f"  ↳ {label}: {preview}{more}")
         if pii:
             extras.append(f"  ↳ PII redacted: {', '.join(pii)}")
         if injection:
@@ -575,16 +612,20 @@ def _format_node_log(node: str, payload: dict) -> tuple[str, list[str]]:
     if node == "policy":
         findings = payload.get("findings", []) or []
         errors = payload.get("errors", []) or []
-        ids = [_attr(f, "rule_id", "?") for f in findings]
-        summary = (
-            f"Policy done — {len(findings)} finding(s): "
-            f"{', '.join(ids) if ids else '(none)'}"
-        )
+        summary = f"Policy done — <b>{len(findings)}</b> finding(s)"
         extras = []
-        # Surface a few useful notes from policy errors (retrieval/heuristic/dropped)
+        # Show each finding with rule_id + evidence snippet
+        for f in findings[:8]:  # cap to avoid log flood
+            rid = _attr(f, "rule_id", "?")
+            ev = (_attr(f, "evidence_quote", "") or "")[:90]
+            ev = ev.replace("\n", " ")
+            extras.append(f"  ↳ <b>{rid}</b> — \"{ev}{'…' if len(ev) >= 90 else ''}\"")
+        if len(findings) > 8:
+            extras.append(f"  ↳ (and {len(findings) - 8} more findings)")
+        # Surface tool-call summary + dropped-id notes
         for e in errors[-4:]:
-            if any(k in e for k in ("dropped", "retriev", "heuristic", "re-check")):
-                extras.append(f"  ↳ {e.replace('[policy_node]', '').strip()}")
+            if any(k in e for k in ("dropped", "tool call", "heuristic", "re-check")):
+                extras.append(f"  ↳ <i>{e.replace('[policy_node]', '').strip()}</i>")
         return (summary, extras)
 
     if node == "risk":
@@ -597,13 +638,24 @@ def _format_node_log(node: str, payload: dict) -> tuple[str, list[str]]:
             if _attr(s, "needs_human_review", False):
                 flagged += 1
         summary = (
-            f"Risk done — scored {len(scored)}: "
+            f"Risk done — scored <b>{len(scored)}</b>: "
             f"🔴{counts['critical']} 🟠{counts['high']} "
             f"🟡{counts['medium']} 🟢{counts['low']}"
         )
         extras = []
+        # Show per-finding severity + exposure so the audience sees the calibration
+        for s in scored[:8]:
+            rid = _attr(_attr(s, "finding", None), "rule_id", "?")
+            sev = _attr(s, "severity", "?")
+            exp = _attr(s, "exposure_score", 0)
+            flag = " ⚑" if _attr(s, "needs_human_review", False) else ""
+            extras.append(f"  ↳ <b>{rid}</b> → <b>{sev}</b> (exposure {exp}/100){flag}")
+        if len(scored) > 8:
+            extras.append(f"  ↳ (and {len(scored) - 8} more scored findings)")
         if flagged:
-            extras.append(f"  ↳ {flagged} finding(s) flagged for human review")
+            extras.append(
+                f"  ↳ <i>⚑ {flagged} finding(s) flagged for human review</i>"
+            )
         return (summary, extras)
 
     if node == "counsel":
@@ -618,15 +670,36 @@ def _format_node_log(node: str, payload: dict) -> tuple[str, list[str]]:
         re_review = bool(_attr(memo, "needs_re_review", False))
         memo_id = _attr(memo, "memo_id", "")
         summary = (
-            f"Counsel done — memo {str(memo_id)[:8]} | "
+            f"Counsel done — memo <b>{str(memo_id)[:8]}</b> | "
             f"🔴{crit} 🟠{high} 🟡{med} 🟢{low} | revision={revs}"
         )
         extras = []
+        execsum = (_attr(memo, "executive_summary", "") or "").strip()
+        if execsum:
+            extras.append(f"  ↳ <i>“{execsum[:160]}{'…' if len(execsum) > 160 else ''}”</i>")
+        # Show fix priority breakdown so the audience sees what's actionable
+        fixes = _attr(memo, "recommended_fixes", []) or []
+        must = sum(1 for fx in fixes if _attr(fx, "priority", "") == "must_fix")
+        should = sum(1 for fx in fixes if _attr(fx, "priority", "") == "should_fix")
+        nice = sum(1 for fx in fixes if _attr(fx, "priority", "") == "nice_to_fix")
+        if fixes:
+            extras.append(
+                f"  ↳ recommended fixes: <b>{must}</b> must_fix, "
+                f"<b>{should}</b> should_fix, <b>{nice}</b> nice_to_fix"
+            )
         if re_review:
             extras.append("  ↳ ↩ flagged for re-check (thin Critical evidence)")
         return (summary, extras)
 
     if node == "human_review":
+        approval = payload.get("human_approval")
+        if approval is not None:
+            decision = _attr(approval, "decision", "?")
+            note = _attr(approval, "reviewer_note", "") or ""
+            extras = []
+            if note:
+                extras.append(f"  ↳ reviewer note: {note[:120]}")
+            return (f"Human review — <b>{decision}</b>", extras)
         return ("Human review — paused for approval", [])
 
     return (f"{node} done", [])
@@ -860,16 +933,25 @@ with tab_run:
         running_slot = st.empty()
         log_slot = st.empty()
 
-        # Mutable state captured by the on_event closure
+        # Mutable state captured by the on_event closure.
+        # `log_lines` is shared with the LangChain callback handler — it may
+        # append from httpx background threads. Rendering ONLY happens from
+        # the main thread (see _render_log + _push below) to avoid the
+        # NoSessionContext error.
         seen: list[str] = []
         log_lines: list[str] = []
 
-        def _push(html_line: str) -> None:
-            log_lines.append(html_line)
+        def _render_log() -> None:
+            """Main-thread-only: paint the full accumulated log buffer."""
             log_slot.markdown(
                 f"<div class='term'>{'<br>'.join(log_lines)}</div>",
                 unsafe_allow_html=True,
             )
+
+        def _push(html_line: str) -> None:
+            """Append a line + repaint. Safe ONLY from the main Streamlit thread."""
+            log_lines.append(html_line)
+            _render_log()
 
         # Initial paint
         pipeline_slot.markdown(_pipeline_strip([]), unsafe_allow_html=True)
@@ -934,6 +1016,12 @@ with tab_run:
                         _running_banner("human_review"), unsafe_allow_html=True
                     )
 
+            # CRITICAL: drain any LangChain-callback lines the handler buffered
+            # from background threads since the last event. Rendering happens
+            # here on the main thread (which has Streamlit's session context),
+            # not in the handler itself.
+            _render_log()
+
         # Helper the callback handler uses to know which node is in-flight.
         def _current_node() -> str | None:
             for n in NODE_ORDER:
@@ -942,8 +1030,11 @@ with tab_run:
             return None
 
         # LangChain callback handler — fires for every LLM start/end + tool call
-        # that happens inside the graph, propagated automatically by LangGraph.
-        cb_handler = StreamlitLogHandler(push=_push, get_current_node=_current_node)
+        # inside the graph, propagated automatically by LangGraph. It writes to
+        # the shared log_lines buffer; the main-thread on_event renders.
+        cb_handler = StreamlitLogHandler(
+            buffer=log_lines, get_current_node=_current_node
+        )
 
         # ── Run the pipeline ──────────────────────────────────────────────
         events, interrupt_payload, snap = _run_async(
@@ -1126,12 +1217,15 @@ with tab_review:
                     seen: list[str] = []
                     log_lines: list[str] = []
 
-                    def _push(html_line: str) -> None:
-                        log_lines.append(html_line)
+                    def _render_log() -> None:
                         log_slot.markdown(
                             f"<div class='term'>{'<br>'.join(log_lines)}</div>",
                             unsafe_allow_html=True,
                         )
+
+                    def _push(html_line: str) -> None:
+                        log_lines.append(html_line)
+                        _render_log()
 
                     pipeline_slot.markdown(
                         _pipeline_strip([]), unsafe_allow_html=True
@@ -1196,6 +1290,8 @@ with tab_review:
                                     _running_banner(next_node),
                                     unsafe_allow_html=True,
                                 )
+                        # Flush handler-buffered lines onto the UI (main thread).
+                        _render_log()
 
                     def _current_node() -> str | None:
                         for n in NODE_ORDER:
@@ -1204,7 +1300,7 @@ with tab_review:
                         return None
 
                     cb_handler = StreamlitLogHandler(
-                        push=_push, get_current_node=_current_node
+                        buffer=log_lines, get_current_node=_current_node
                     )
                     approval = {
                         "decision": "send_back",
