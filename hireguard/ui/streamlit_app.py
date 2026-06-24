@@ -135,6 +135,29 @@ header[data-testid="stHeader"] {background: transparent;}
 
 /* ── Muted helper text ────────────────────────────────────────────────── */
 .muted {color:#71717a; font-size:13px;}
+
+/* ── Live terminal log ────────────────────────────────────────────────── */
+.term {
+    background: #0b0d12; color: #e4e4e7;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12.5px; line-height: 1.7;
+    padding: 14px 16px; border-radius: 8px;
+    border: 1px solid #1f2937;
+    max-height: 360px; overflow-y: auto;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.term .ts { color: #71717a; }
+.term .node { color: #93c5fd; font-weight: 600; }
+.term .done { color: #86efac; }
+.term .warn { color: #fdba74; }
+.term .err  { color: #fca5a5; }
+.term .info { color: #c4b5fd; }
+.term .dim  { color: #71717a; }
+.term .running {
+    color: #fcd34d; animation: blink 1.2s ease-in-out infinite;
+}
+@keyframes blink {0%,100% {opacity: 1;} 50% {opacity: 0.4;}}
+.term-empty { color: #71717a; font-style: italic;}
 </style>
 """,
     unsafe_allow_html=True,
@@ -246,16 +269,34 @@ def _trace_config(packet: HiringPacket, thread_id: str, phase: str) -> dict:
     }
 
 
-async def _run_until_pause(packet: HiringPacket, thread_id: str):
+async def _run_until_pause(
+    packet: HiringPacket,
+    thread_id: str,
+    on_event=None,
+    callbacks: list | None = None,
+):
+    """Run pipeline until first __interrupt__. If `on_event` is provided, it's
+    called synchronously after each LangGraph event so the UI can render live.
+    `callbacks` is a list of LangChain CallbackHandlers — they receive every
+    LLM start/end + tool call inside the nodes, propagated automatically.
+    """
     async with get_checkpointer() as saver:
         graph = build_graph(checkpointer=saver)
         config = _trace_config(packet, thread_id, phase="initial")
+        if callbacks:
+            config["callbacks"] = callbacks
         events: list[dict] = []
         interrupt_payload = None
         async for ev in graph.astream(
             PipelineState(packet=packet), config=config, stream_mode="updates"
         ):
             events.append(ev)
+            if on_event is not None:
+                try:
+                    on_event(ev)
+                except Exception:
+                    # never let UI rendering kill the pipeline
+                    pass
             if "__interrupt__" in ev:
                 interrupt_payload = ev["__interrupt__"][0].value
                 break
@@ -297,6 +338,276 @@ def _verdict_class(counts: dict) -> tuple[str, str]:
     if counts.get("medium", 0) > 0:
         return ("medium", "ADVISORY — MINOR ISSUES")
     return ("clean", "PASS — NO VIOLATIONS")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LangChain callback handler — surfaces LLM + tool internals to the live log
+# ──────────────────────────────────────────────────────────────────────────────
+import time
+from typing import Any, Callable, Sequence
+from uuid import UUID
+
+from langchain_core.callbacks import AsyncCallbackHandler
+
+
+def _model_name(serialized: dict | None) -> str:
+    """Pull a readable model name out of the LangChain `serialized` dict."""
+    if not serialized:
+        return "?"
+    name = serialized.get("name") or ""
+    if name and "/" not in name:
+        # Common in newer LangChain: 'ChatAnthropic' / 'ChatGroq'
+        kw = serialized.get("kwargs", {}) or {}
+        model = kw.get("model") or kw.get("model_name") or ""
+        if model:
+            return f"{name}({model})"
+        return name
+    return name or "?"
+
+
+class StreamlitLogHandler(AsyncCallbackHandler):
+    """Streams LLM + tool events from anywhere inside the graph into the
+    Streamlit live log. Runs in the same asyncio loop as the pipeline."""
+
+    def __init__(
+        self,
+        push: Callable[[str], None],
+        get_current_node: Callable[[], str | None],
+    ):
+        super().__init__()
+        self.push = push
+        self.get_node = get_current_node
+        self._llm_t0: dict[UUID, tuple[str, float]] = {}
+        self._tool_t0: dict[UUID, tuple[str, float]] = {}
+
+    # ── LLM lifecycle ──
+    async def on_llm_start(
+        self,
+        serialized: dict[str, Any] | None,
+        prompts: list[str],
+        *,
+        run_id: UUID,
+        **_: Any,
+    ) -> None:
+        model = _model_name(serialized)
+        self._llm_t0[run_id] = (model, time.time())
+        node = self.get_node() or "?"
+        size = sum(len(p) for p in prompts)
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='info'>🤖 [{node}] {model} ← prompt ({size:,} chars)…</span>"
+        )
+
+    async def on_chat_model_start(
+        self,
+        serialized: dict[str, Any] | None,
+        messages: list[list[Any]],
+        *,
+        run_id: UUID,
+        **_: Any,
+    ) -> None:
+        model = _model_name(serialized)
+        self._llm_t0[run_id] = (model, time.time())
+        node = self.get_node() or "?"
+        n_msgs = sum(len(m) for m in messages)
+        total_chars = 0
+        try:
+            for batch in messages:
+                for m in batch:
+                    content = getattr(m, "content", "") or ""
+                    if isinstance(content, str):
+                        total_chars += len(content)
+        except Exception:
+            pass
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='info'>🤖 [{node}] {model} ← {n_msgs} message(s), "
+            f"{total_chars:,} chars total…</span>"
+        )
+
+    async def on_llm_end(
+        self, response: Any, *, run_id: UUID, **_: Any
+    ) -> None:
+        model, t0 = self._llm_t0.pop(run_id, ("?", time.time()))
+        latency = time.time() - t0
+        node = self.get_node() or "?"
+        # token usage if available
+        tokens_in = tokens_out = None
+        try:
+            out = response.llm_output or {}
+            usage = out.get("usage") or out.get("token_usage") or {}
+            tokens_in = usage.get("input_tokens") or usage.get("prompt_tokens")
+            tokens_out = usage.get("output_tokens") or usage.get("completion_tokens")
+        except Exception:
+            pass
+        tok = ""
+        if tokens_in or tokens_out:
+            tok = f" · {tokens_in or '?'}→{tokens_out or '?'} tokens"
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='done'>✓ [{node}] {model} responded in {latency:.1f}s{tok}</span>"
+        )
+
+    async def on_llm_error(
+        self, error: BaseException, *, run_id: UUID, **_: Any
+    ) -> None:
+        model, _t0 = self._llm_t0.pop(run_id, ("?", 0))
+        node = self.get_node() or "?"
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='err'>✗ [{node}] {model} failed: {type(error).__name__}: {str(error)[:120]}</span>"
+        )
+
+    # ── Tool lifecycle ──
+    async def on_tool_start(
+        self,
+        serialized: dict[str, Any] | None,
+        input_str: str,
+        *,
+        run_id: UUID,
+        **_: Any,
+    ) -> None:
+        name = (serialized or {}).get("name", "tool")
+        self._tool_t0[run_id] = (name, time.time())
+        node = self.get_node() or "?"
+        snippet = (input_str or "").replace("\n", " ")[:80]
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='info'>🔧 [{node}] tool <b>{name}</b>({snippet}…)</span>"
+        )
+
+    async def on_tool_end(
+        self, output: Any, *, run_id: UUID, **_: Any
+    ) -> None:
+        name, t0 = self._tool_t0.pop(run_id, ("tool", time.time()))
+        latency = time.time() - t0
+        node = self.get_node() or "?"
+        out_str = str(output).replace("\n", " ")[:100]
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='done'>✓ [{node}] {name} → {out_str}{'…' if len(str(output)) > 100 else ''} ({latency:.2f}s)</span>"
+        )
+
+    async def on_tool_error(
+        self, error: BaseException, *, run_id: UUID, **_: Any
+    ) -> None:
+        name, _t0 = self._tool_t0.pop(run_id, ("tool", 0))
+        node = self.get_node() or "?"
+        self.push(
+            f"<span class='dim'>  ↳</span> "
+            f"<span class='err'>✗ [{node}] tool {name} errored: {type(error).__name__}: {str(error)[:120]}</span>"
+        )
+
+
+NODE_ICONS = {
+    "intake": "🪪",
+    "policy": "📜",
+    "risk": "⚖️",
+    "counsel": "✍️",
+    "human_review": "🙋",
+}
+NODE_ORDER = ["intake", "policy", "risk", "counsel", "human_review"]
+
+
+def _attr(obj, key, default=None):
+    """Get attribute on a Pydantic model OR key on a dict — for resilience."""
+    if hasattr(obj, key):
+        return getattr(obj, key)
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return default
+
+
+def _format_node_log(node: str, payload: dict) -> tuple[str, list[str]]:
+    """Return (summary_line, extra_lines) — both raw text. Streamlit-side will
+    HTML-escape and wrap with colours."""
+    if node == "intake":
+        facts = payload.get("facts")
+        if facts is None:
+            return ("Intake — no facts returned", [])
+        jurisdiction = _attr(facts, "jurisdiction", "?")
+        age_n = len(_attr(facts, "age_coded_phrases", []) or [])
+        gender_n = len(_attr(facts, "gender_restrictive_phrases", []) or [])
+        caste_n = len(_attr(facts, "caste_or_community_signals", []) or [])
+        marital_n = len(_attr(facts, "marital_or_pregnancy_signals", []) or [])
+        medical_n = len(_attr(facts, "medical_or_hiv_test_signals", []) or [])
+        rpwd_n = len(
+            _attr(facts, "non_essential_physical_requirements", []) or []
+        )
+        pii = _attr(facts, "pii_redacted_labels", []) or []
+        injection = bool(_attr(facts, "injection_attempt_detected", False))
+        subj_n = len(_attr(facts, "subjective_scorecard_criteria", []) or [])
+        summary = (
+            f"Intake done — jurisdiction={jurisdiction}, "
+            f"age:{age_n} gender:{gender_n} caste:{caste_n} "
+            f"marital:{marital_n} medical:{medical_n} disability:{rpwd_n} "
+            f"subjective-scorecard:{subj_n}"
+        )
+        extras = []
+        if pii:
+            extras.append(f"  ↳ PII redacted: {', '.join(pii)}")
+        if injection:
+            extras.append("  ↳ ⚠ prompt-injection attempt detected (flagged, not refused)")
+        return (summary, extras)
+
+    if node == "policy":
+        findings = payload.get("findings", []) or []
+        errors = payload.get("errors", []) or []
+        ids = [_attr(f, "rule_id", "?") for f in findings]
+        summary = (
+            f"Policy done — {len(findings)} finding(s): "
+            f"{', '.join(ids) if ids else '(none)'}"
+        )
+        extras = []
+        # Surface a few useful notes from policy errors (retrieval/heuristic/dropped)
+        for e in errors[-4:]:
+            if any(k in e for k in ("dropped", "retriev", "heuristic", "re-check")):
+                extras.append(f"  ↳ {e.replace('[policy_node]', '').strip()}")
+        return (summary, extras)
+
+    if node == "risk":
+        scored = payload.get("scored_findings", []) or []
+        counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+        flagged = 0
+        for s in scored:
+            sev = _attr(s, "severity", "low")
+            counts[sev] = counts.get(sev, 0) + 1
+            if _attr(s, "needs_human_review", False):
+                flagged += 1
+        summary = (
+            f"Risk done — scored {len(scored)}: "
+            f"🔴{counts['critical']} 🟠{counts['high']} "
+            f"🟡{counts['medium']} 🟢{counts['low']}"
+        )
+        extras = []
+        if flagged:
+            extras.append(f"  ↳ {flagged} finding(s) flagged for human review")
+        return (summary, extras)
+
+    if node == "counsel":
+        memo = payload.get("audit_memo")
+        revs = payload.get("revision_count", 0)
+        if memo is None:
+            return ("Counsel done — no memo", [])
+        crit = _attr(memo, "critical_count", 0)
+        high = _attr(memo, "high_count", 0)
+        med = _attr(memo, "medium_count", 0)
+        low = _attr(memo, "low_count", 0)
+        re_review = bool(_attr(memo, "needs_re_review", False))
+        memo_id = _attr(memo, "memo_id", "")
+        summary = (
+            f"Counsel done — memo {str(memo_id)[:8]} | "
+            f"🔴{crit} 🟠{high} 🟡{med} 🟢{low} | revision={revs}"
+        )
+        extras = []
+        if re_review:
+            extras.append("  ↳ ↩ flagged for re-check (thin Critical evidence)")
+        return (summary, extras)
+
+    if node == "human_review":
+        return ("Human review — paused for approval", [])
+
+    return (f"{node} done", [])
 
 
 def _pipeline_strip(done: list[str], paused: bool = False) -> str:
@@ -445,34 +756,134 @@ with tab_run:
     if run_clicked and packet_json:
         packet = HiringPacket.model_validate_json(packet_json)
         thread_id = f"ui-{packet.packet_id}"
+
+        # ── Live UI scaffolding ───────────────────────────────────────────
+        st.markdown(" ")
         pipeline_slot = st.empty()
+        running_slot = st.empty()
+        log_slot = st.empty()
+
+        # Mutable state captured by the on_event closure
+        seen: list[str] = []
+        log_lines: list[str] = []
+
+        from datetime import datetime
+
+        def _now() -> str:
+            return datetime.now().strftime("%H:%M:%S")
+
+        def _push(html_line: str) -> None:
+            log_lines.append(html_line)
+            log_slot.markdown(
+                f"<div class='term'>{'<br>'.join(log_lines)}</div>",
+                unsafe_allow_html=True,
+            )
+
+        def _running_banner(node: str | None) -> str:
+            if node is None:
+                return ""
+            icon = NODE_ICONS.get(node, "•")
+            return (
+                f"<div style='display:flex; gap:8px; align-items:center; "
+                f"background:#fef9c3; border:1px solid #fde68a; border-radius:8px; "
+                f"padding:8px 12px; margin: 8px 0; font-size:13px;'>"
+                f"<span style='animation: blink 1.2s ease-in-out infinite;'>{icon}</span>"
+                f"<span><b>{node}</b> is running…</span>"
+                f"</div>"
+            )
+
+        # Initial paint
         pipeline_slot.markdown(_pipeline_strip([]), unsafe_allow_html=True)
+        running_slot.markdown(_running_banner("intake"), unsafe_allow_html=True)
+        _push(
+            f"<span class='ts'>{_now()}</span> "
+            f"<span class='info'>🚀 Pipeline starting for packet "
+            f"<b>{packet.packet_id}</b> ({packet.primary_work_location})</span>"
+        )
+        _push(
+            f"<span class='ts'>{_now()}</span> "
+            f"<span class='dim'>thread_id={thread_id} · checkpointer=Supabase Postgres "
+            f"· LangSmith={'on' if langsmith_enabled() else 'off'}</span>"
+        )
 
-        with st.status("Running multi-agent pipeline…", expanded=True) as status:
-            events, interrupt_payload, snap = _run_async(
-                _run_until_pause(packet, thread_id)
-            )
-            seen: list[str] = []
-            for ev in events:
-                for node, _payload in ev.items():
-                    if node == "__interrupt__":
-                        continue
-                    seen.append(node)
-                    st.write(f"✓  **{node}** completed")
-            paused = interrupt_payload is not None
-            pipeline_slot.markdown(
-                _pipeline_strip(seen, paused=paused), unsafe_allow_html=True
-            )
-            status.update(
-                label=(
-                    "✓ Pipeline paused at human-review gate"
-                    if paused
-                    else "Pipeline finished"
-                ),
-                state="complete",
-            )
+        # ── Per-event callback (runs synchronously from the asyncio loop) ──
+        def on_event(ev: dict) -> None:
+            for node, payload in ev.items():
+                if node == "__interrupt__":
+                    _push(
+                        f"<span class='ts'>{_now()}</span> "
+                        f"<span class='warn'>⏸ INTERRUPT — pipeline paused for human approval</span>"
+                    )
+                    pipeline_slot.markdown(
+                        _pipeline_strip(seen, paused=True), unsafe_allow_html=True
+                    )
+                    running_slot.markdown(
+                        "<div style='background:#ffedd5; border:1px solid #fdba74; "
+                        "border-radius:8px; padding:8px 12px; font-size:13px;'>"
+                        "🙋 <b>Awaiting human decision</b></div>",
+                        unsafe_allow_html=True,
+                    )
+                    continue
 
-        if interrupt_payload is not None:
+                seen.append(node)
+                icon = NODE_ICONS.get(node, "•")
+                summary, extras = _format_node_log(node, payload)
+                _push(
+                    f"<span class='ts'>{_now()}</span> "
+                    f"<span class='done'>✓</span> "
+                    f"<span class='node'>{icon} {summary}</span>"
+                )
+                for ex in extras:
+                    _push(f"<span class='dim'>{ex}</span>")
+
+                # Update pipeline strip + next-running banner
+                pipeline_slot.markdown(
+                    _pipeline_strip(seen, paused=False), unsafe_allow_html=True
+                )
+                # Predict next node from order
+                next_node = None
+                for n in NODE_ORDER:
+                    if n not in seen:
+                        next_node = n
+                        break
+                if next_node and next_node != "human_review":
+                    running_slot.markdown(
+                        _running_banner(next_node), unsafe_allow_html=True
+                    )
+                elif next_node == "human_review":
+                    running_slot.markdown(
+                        _running_banner("human_review"), unsafe_allow_html=True
+                    )
+
+        # Helper the callback handler uses to know which node is in-flight.
+        def _current_node() -> str | None:
+            for n in NODE_ORDER:
+                if n not in seen:
+                    return n
+            return None
+
+        # LangChain callback handler — fires for every LLM start/end + tool call
+        # that happens inside the graph, propagated automatically by LangGraph.
+        cb_handler = StreamlitLogHandler(push=_push, get_current_node=_current_node)
+
+        # ── Run the pipeline ──────────────────────────────────────────────
+        events, interrupt_payload, snap = _run_async(
+            _run_until_pause(
+                packet,
+                thread_id,
+                on_event=on_event,
+                callbacks=[cb_handler],
+            )
+        )
+
+        # ── Final state ───────────────────────────────────────────────────
+        paused = interrupt_payload is not None
+        if paused:
+            _push(
+                f"<span class='ts'>{_now()}</span> "
+                f"<span class='info'>📋 Pipeline complete — memo drafted, "
+                f"awaiting your decision in the <b>Pending Approval</b> tab.</span>"
+            )
             st.session_state["pending"] = {
                 "thread_id": thread_id,
                 "payload": interrupt_payload,
@@ -482,6 +893,11 @@ with tab_run:
                 "🙋  Awaiting your decision — switch to **⏸ Pending Approval**."
             )
         else:
+            _push(
+                f"<span class='ts'>{_now()}</span> "
+                f"<span class='warn'>Pipeline terminated without HITL pause.</span>"
+            )
+            running_slot.empty()
             st.info("Graph terminated without a HITL pause.")
 
 
