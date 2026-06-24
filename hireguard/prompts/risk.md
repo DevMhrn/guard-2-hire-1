@@ -41,5 +41,13 @@ Rules:
   `medium` and exposure_score should be in that band.
 - Be calibrated, not alarmist: reserve `critical` for genuine statutory or
   constitutional liability under Indian law.
+- **Soft rules (no binding statute):** some findings rest only on a general
+  fairness / Article 14 (non-arbitrariness) basis rather than a specific statute
+  — chiefly `IND-AGE-BAR` (India has no general private-sector age-discrimination
+  law) and `IND-SUBJECTIVE-CRITERIA` ("culture fit" disparate-impact risk). Cap
+  these at `medium` (exposure ≤ 49) UNLESS the evidence is egregious — e.g. an
+  explicit hard age cutoff combined with other discriminatory signals, or a
+  scorecard openly selecting on personal/identity "fit". A lone soft signal
+  should land at `low`–`medium`, not `high`.
 
 Return strictly the requested structured fields. No prose outside the schema.
