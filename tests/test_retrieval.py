@@ -17,6 +17,10 @@ ALL_RULES = {
     "IND-MATERNITY-MARITAL", "IND-DISABILITY-RPWD", "IND-TRANSGENDER",
     "IND-HIV-MEDICAL", "IND-AGE-BAR", "IND-DOMICILE-LANGUAGE",
     "IND-SUBJECTIVE-CRITERIA",
+    # Scope-broadening rules added with the SafeHire rebrand — apply to any
+    # Indian employment type (IT, manufacturing, hospitality, BPO, gig, etc.)
+    "IND-POSH-SAFETY",
+    "IND-EXPLOITATIVE-HOURS",
 }
 
 
@@ -31,7 +35,8 @@ def test_central_rules_apply_to_any_indian_role():
     """India's equality law is Union/Central → every role sees the central rules,
     whatever the city/state."""
     for loc in ("Bengaluru, KA", "Mumbai, MH", "KA", "Remote-India"):
-        ids = _ids(retrieve_rules("hiring compliance review", loc, k=10, backend="local"))
+        # k=20 to accommodate the broadened ruleset (12 rules + headroom).
+        ids = _ids(retrieve_rules("hiring compliance review", loc, k=20, backend="local"))
         assert ALL_RULES <= ids, f"{loc} missing rules: {ALL_RULES - ids}"
 
 

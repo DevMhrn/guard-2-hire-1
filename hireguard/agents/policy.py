@@ -58,11 +58,19 @@ TOOL_MAP = {t.name: t for t in POLICY_TOOLS}
 MAX_TOOL_ROUNDS = 2  # cap — typically 0-2 statute verifications per audit
 
 # Broad seed of Indian-law signal terms so retrieval ranks the relevant rules
-# even when the structured facts are sparse.
+# even when the structured facts are sparse. Covers all 12 IND-* rules across
+# every employment sector — IT, manufacturing, hospitality, sales, BPO,
+# healthcare, finance, gig / contract — grounded in Constitution Arts 14/15/16.
 _QUERY_SEED = (
     "gender caste religion community marital status pregnancy maternity "
     "disability transgender third gender HIV medical test age domicile "
-    "native language local subjective culture fit recruitment discrimination"
+    "native language local subjective culture fit recruitment discrimination "
+    "POSH Act 2013 internal complaints committee workplace safety night shift "
+    "field travel customer facing women safety harassment "
+    "working hours overtime 24x7 availability always on call exploitation "
+    "Code on Wages 2019 Shops Establishments Act Factories Act rest period "
+    "Constitution Article 14 15 16 equality non-arbitrariness "
+    "any employment IT manufacturing hospitality sales BPO healthcare finance gig contract"
 )
 
 # Maps each India-specific IntakeFacts signal field (populated with exact quotes
