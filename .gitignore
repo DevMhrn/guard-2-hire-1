@@ -1,0 +1,39 @@
+# env / secrets
+.env
+.env.local
+*.pem
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# streamlit
+.streamlit/secrets.toml
+
+# local data
+*.db
+*.sqlite
+*.sqlite3
+
+# internal team plan — do not publish to public origin
+PROJECT_PLAN.md

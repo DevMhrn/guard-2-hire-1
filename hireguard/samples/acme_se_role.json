@@ -1,0 +1,31 @@
+{
+  "packet_id": "acme_se_role",
+  "company": "Acme Robotics, Inc.",
+  "company_size": 240,
+  "primary_work_location": "San Francisco, CA",
+  "_planted_violations_for_demo": [
+    "EEOC-ADEA-AGE (young, energetic, digital native, recent grad)",
+    "EEOC-NATL-ORIGIN (native English speaker)",
+    "PAYHIST-SALARY-BAN (asks current salary)",
+    "PAYTRANS-CA-SB1162 (CA employer, no salary range in posting)",
+    "EEOC-DISPARATE-SUBJECTIVE (culture fit in scorecard)",
+    "EEOC-ADA-DISABILITY (must be able to lift 40 lbs, no hint of accommodation)"
+  ],
+  "job_posting": "Software Engineer — Acme Robotics (San Francisco, on-site)\n\nWe're hiring a young, energetic software engineer to join our fast-moving team. The ideal candidate is a recent grad and a digital native who lives and breathes code. You must be a native English speaker with flawless communication. This is an on-site role; you must be able to lift 40 lbs of robotics equipment as needed.\n\nResponsibilities: build and ship backend services, collaborate across teams, move fast.\nRequirements: 0-3 years experience, BS in CS, fluency in Python and Go.\n\nApply now — tell us your current salary so we can calibrate the offer.",
+  "comp_band": {
+    "currency": "USD",
+    "posted_range_in_listing": null,
+    "internal_band_min": 135000,
+    "internal_band_max": 175000,
+    "benefits_described_in_listing": false
+  },
+  "interview_scorecard": {
+    "title": "SE Interview Rubric",
+    "criteria": [
+      { "name": "Coding ability", "scale": "1-5", "anchored": true },
+      { "name": "System design", "scale": "1-5", "anchored": true },
+      { "name": "Culture fit", "scale": "1-5", "anchored": false, "note": "Does the candidate feel like one of us?" },
+      { "name": "Communication", "scale": "1-5", "anchored": true }
+    ]
+  }
+}

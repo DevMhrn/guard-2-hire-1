@@ -1,0 +1,9 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "include": ["hireguard", "tests", "run_demo.py"],
+  "exclude": ["**/__pycache__", ".venv", ".git"],
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": "none"
+}

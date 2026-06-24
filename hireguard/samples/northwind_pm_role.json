@@ -1,0 +1,26 @@
+{
+  "packet_id": "northwind_pm_role",
+  "company": "Northwind Analytics, LLC",
+  "company_size": 60,
+  "primary_work_location": "Denver, CO",
+  "_planted_violations_for_demo": [
+    "CLEAN PACKET — expected verdict: no Critical issues. May surface at most a minor Gap/Suggestion."
+  ],
+  "job_posting": "Product Manager — Northwind Analytics (Denver, CO; hybrid)\n\nNorthwind Analytics is hiring a Product Manager to own the roadmap for our data platform. You'll partner with engineering, design, and customers to define and ship features that matter.\n\nResponsibilities: own product discovery and delivery, write specs, prioritize the backlog, partner cross-functionally.\nRequirements: demonstrated product management experience; strong written and verbal communication; experience with B2B SaaS analytics is a plus. We evaluate candidates on job-related competencies and provide reasonable accommodations throughout the process.\n\nSalary range: $130,000-$165,000 plus equity, medical/dental/vision, 401(k) match, and 20 days PTO. We welcome applicants of all backgrounds and are an equal-opportunity employer.",
+  "comp_band": {
+    "currency": "USD",
+    "posted_range_in_listing": { "min": 130000, "max": 165000 },
+    "internal_band_min": 130000,
+    "internal_band_max": 165000,
+    "benefits_described_in_listing": true
+  },
+  "interview_scorecard": {
+    "title": "PM Interview Rubric",
+    "criteria": [
+      { "name": "Product sense", "scale": "1-5", "anchored": true },
+      { "name": "Prioritization & execution", "scale": "1-5", "anchored": true },
+      { "name": "Cross-functional collaboration", "scale": "1-5", "anchored": true },
+      { "name": "Communication", "scale": "1-5", "anchored": true }
+    ]
+  }
+}
