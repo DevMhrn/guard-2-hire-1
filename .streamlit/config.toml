@@ -1,0 +1,17 @@
+# Streamlit theme — pinned light so our custom CSS renders consistently
+# across teammates' machines (some run dark mode by default).
+
+[theme]
+base = "light"
+primaryColor = "#4338ca"
+backgroundColor = "#fafafa"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#18181b"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = true
+
+[browser]
+gatherUsageStats = false
