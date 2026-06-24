@@ -304,7 +304,18 @@ async def _run_until_pause(
         return events, interrupt_payload, snap.values
 
 
-async def _resume_with(approval: dict, thread_id: str):
+async def _resume_with(
+    approval: dict,
+    thread_id: str,
+    on_event=None,
+    callbacks: list | None = None,
+):
+    """Resume the graph past a HITL interrupt with the given approval payload.
+
+    Streams events to `on_event` synchronously (for UI live log) and detects if
+    the graph re-pauses at a new HITL gate (happens after a `send_back` triggers
+    the re-loop). Returns (events, new_interrupt_payload_or_None, final_state).
+    """
     async with get_checkpointer() as saver:
         graph = build_graph(checkpointer=saver)
         config = {
@@ -321,13 +332,24 @@ async def _resume_with(approval: dict, thread_id: str):
                 "decision": approval.get("decision"),
             },
         }
+        if callbacks:
+            config["callbacks"] = callbacks
         events: list[dict] = []
+        interrupt_payload = None
         async for ev in graph.astream(
             Command(resume=approval), config=config, stream_mode="updates"
         ):
             events.append(ev)
+            if on_event is not None:
+                try:
+                    on_event(ev)
+                except Exception:
+                    pass
+            if "__interrupt__" in ev:
+                interrupt_payload = ev["__interrupt__"][0].value
+                break
         snap = await graph.aget_state(config)
-        return events, snap.values
+        return events, interrupt_payload, snap.values
 
 
 def _verdict_class(counts: dict) -> tuple[str, str]:
@@ -610,6 +632,29 @@ def _format_node_log(node: str, payload: dict) -> tuple[str, list[str]]:
     return (f"{node} done", [])
 
 
+def _now_hms() -> str:
+    """Module-level timestamp helper for the live log."""
+    from datetime import datetime
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _running_banner(node: str | None) -> str:
+    """Yellow blinking 'X is running…' banner for the currently-in-flight node.
+    Module-level so it can be used by both Run-Audit and Send-back flows.
+    """
+    if node is None:
+        return ""
+    icon = NODE_ICONS.get(node, "•")
+    return (
+        f"<div style='display:flex; gap:8px; align-items:center; "
+        f"background:#fef9c3; border:1px solid #fde68a; border-radius:8px; "
+        f"padding:8px 12px; margin: 8px 0; font-size:13px;'>"
+        f"<span style='animation: blink 1.2s ease-in-out infinite;'>{icon}</span>"
+        f"<span><b>{node}</b> is running…</span>"
+        f"</div>"
+    )
+
+
 def _pipeline_strip(done: list[str], paused: bool = False) -> str:
     nodes = ["intake", "policy", "risk", "counsel", "human_review"]
     labels = {
@@ -819,11 +864,6 @@ with tab_run:
         seen: list[str] = []
         log_lines: list[str] = []
 
-        from datetime import datetime
-
-        def _now() -> str:
-            return datetime.now().strftime("%H:%M:%S")
-
         def _push(html_line: str) -> None:
             log_lines.append(html_line)
             log_slot.markdown(
@@ -831,29 +871,16 @@ with tab_run:
                 unsafe_allow_html=True,
             )
 
-        def _running_banner(node: str | None) -> str:
-            if node is None:
-                return ""
-            icon = NODE_ICONS.get(node, "•")
-            return (
-                f"<div style='display:flex; gap:8px; align-items:center; "
-                f"background:#fef9c3; border:1px solid #fde68a; border-radius:8px; "
-                f"padding:8px 12px; margin: 8px 0; font-size:13px;'>"
-                f"<span style='animation: blink 1.2s ease-in-out infinite;'>{icon}</span>"
-                f"<span><b>{node}</b> is running…</span>"
-                f"</div>"
-            )
-
         # Initial paint
         pipeline_slot.markdown(_pipeline_strip([]), unsafe_allow_html=True)
         running_slot.markdown(_running_banner("intake"), unsafe_allow_html=True)
         _push(
-            f"<span class='ts'>{_now()}</span> "
+            f"<span class='ts'>{_now_hms()}</span> "
             f"<span class='info'>🚀 Pipeline starting for packet "
             f"<b>{packet.packet_id}</b> ({packet.primary_work_location})</span>"
         )
         _push(
-            f"<span class='ts'>{_now()}</span> "
+            f"<span class='ts'>{_now_hms()}</span> "
             f"<span class='dim'>thread_id={thread_id} · checkpointer=Supabase Postgres "
             f"· LangSmith={'on' if langsmith_enabled() else 'off'}</span>"
         )
@@ -863,7 +890,7 @@ with tab_run:
             for node, payload in ev.items():
                 if node == "__interrupt__":
                     _push(
-                        f"<span class='ts'>{_now()}</span> "
+                        f"<span class='ts'>{_now_hms()}</span> "
                         f"<span class='warn'>⏸ INTERRUPT — pipeline paused for human approval</span>"
                     )
                     pipeline_slot.markdown(
@@ -881,7 +908,7 @@ with tab_run:
                 icon = NODE_ICONS.get(node, "•")
                 summary, extras = _format_node_log(node, payload)
                 _push(
-                    f"<span class='ts'>{_now()}</span> "
+                    f"<span class='ts'>{_now_hms()}</span> "
                     f"<span class='done'>✓</span> "
                     f"<span class='node'>{icon} {summary}</span>"
                 )
@@ -932,7 +959,7 @@ with tab_run:
         paused = interrupt_payload is not None
         if paused:
             _push(
-                f"<span class='ts'>{_now()}</span> "
+                f"<span class='ts'>{_now_hms()}</span> "
                 f"<span class='info'>📋 Pipeline complete — memo drafted, "
                 f"awaiting your decision in the <b>Pending Approval</b> tab.</span>"
             )
@@ -946,7 +973,7 @@ with tab_run:
             )
         else:
             _push(
-                f"<span class='ts'>{_now()}</span> "
+                f"<span class='ts'>{_now_hms()}</span> "
                 f"<span class='warn'>Pipeline terminated without HITL pause.</span>"
             )
             running_slot.empty()
@@ -972,13 +999,24 @@ with tab_review:
         memo = snap.get("audit_memo")
         counts = payload.get("counts", {})
         v_cls, v_label = _verdict_class(counts)
+        # Pull revision_count from state — incremented by each Counsel pass.
+        # First pass = 1; after one send-back the re-checked memo is revision 2.
+        revision = int(snap.get("revision_count") or 0)
 
         # Verdict + summary
         with st.container(border=True):
             top_l, top_r = st.columns([3, 1])
             with top_l:
+                revision_badge = ""
+                if revision >= 2:
+                    revision_badge = (
+                        f" <span style='margin-left:8px; padding:3px 8px; "
+                        f"border-radius:5px; background:#e0e7ff; color:#3730a3; "
+                        f"font-size:11px; font-weight:700; letter-spacing:0.05em; "
+                        f"text-transform:uppercase;'>↩ Revision #{revision}</span>"
+                    )
                 st.markdown(
-                    f"<span class='verdict {v_cls}'>{v_label}</span>",
+                    f"<span class='verdict {v_cls}'>{v_label}</span>{revision_badge}",
                     unsafe_allow_html=True,
                 )
             with top_r:
@@ -1039,11 +1077,14 @@ with tab_review:
         )
         c1, c2, c3 = st.columns(3)
 
+        # ── Approve ─────────────────────────────────────────────────────
         if c1.button(
             "✅  Approve & publish", type="primary", use_container_width=True
         ):
             approval = {"decision": "approve", "reviewer_note": note}
-            _, final_snap = _run_async(_resume_with(approval, p["thread_id"]))
+            _, _new_interrupt, final_snap = _run_async(
+                _resume_with(approval, p["thread_id"])
+            )
             if memo:
                 _run_async(
                     save_audit_memo(
@@ -1061,11 +1102,144 @@ with tab_review:
             del st.session_state["pending"]
             st.rerun()
 
+        # ── Send back — full live re-check loop ─────────────────────────
         if c2.button("↩  Send back for re-check", use_container_width=True):
-            approval = {"decision": "send_back", "reviewer_note": note}
-            _, final_snap = _run_async(_resume_with(approval, p["thread_id"]))
-            st.warning("↩  Sent back to Policy for re-check (max 2 loops).")
+            MAX_REVISIONS_UI = 2  # mirror graph.MAX_REVISIONS for the UI message
 
+            if revision >= MAX_REVISIONS_UI:
+                # The graph router will route to END (not loop) — warn before invoking.
+                st.warning(
+                    f"⛔ Revision limit reached ({MAX_REVISIONS_UI}). "
+                    "Re-check will not run again — please Approve or Reject."
+                )
+            else:
+                st.markdown(" ")
+                with st.container(border=True):
+                    st.markdown(
+                        f"<div class='step-label'>Re-check in progress — revision #{revision + 1}</div>",
+                        unsafe_allow_html=True,
+                    )
+                    pipeline_slot = st.empty()
+                    running_slot = st.empty()
+                    log_slot = st.empty()
+
+                    seen: list[str] = []
+                    log_lines: list[str] = []
+
+                    def _push(html_line: str) -> None:
+                        log_lines.append(html_line)
+                        log_slot.markdown(
+                            f"<div class='term'>{'<br>'.join(log_lines)}</div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    pipeline_slot.markdown(
+                        _pipeline_strip([]), unsafe_allow_html=True
+                    )
+                    running_slot.markdown(
+                        _running_banner("policy"), unsafe_allow_html=True
+                    )
+                    _push(
+                        f"<span class='ts'>{_now_hms()}</span> "
+                        f"<span class='warn'>↩ SEND-BACK — re-running pipeline "
+                        f"from Policy with reviewer note: "
+                        f"{(note or '(none)')[:80]}</span>"
+                    )
+
+                    def on_event(ev: dict) -> None:
+                        for node, payload_ev in ev.items():
+                            if node == "__interrupt__":
+                                _push(
+                                    f"<span class='ts'>{_now_hms()}</span> "
+                                    f"<span class='warn'>⏸ INTERRUPT — "
+                                    f"re-checked memo ready for review</span>"
+                                )
+                                pipeline_slot.markdown(
+                                    _pipeline_strip(seen, paused=True),
+                                    unsafe_allow_html=True,
+                                )
+                                running_slot.markdown(
+                                    "<div style='background:#ffedd5; border:1px solid #fdba74; "
+                                    "border-radius:8px; padding:8px 12px; font-size:13px;'>"
+                                    "🙋 <b>Awaiting human decision (revised memo)</b></div>",
+                                    unsafe_allow_html=True,
+                                )
+                                continue
+
+                            # human_review fires its own update event when it
+                            # consumes the resume Command — skip it from "seen"
+                            # so the pipeline strip shows the re-loop fresh.
+                            if node == "human_review":
+                                continue
+
+                            seen.append(node)
+                            icon = NODE_ICONS.get(node, "•")
+                            summary, extras = _format_node_log(node, payload_ev)
+                            _push(
+                                f"<span class='ts'>{_now_hms()}</span> "
+                                f"<span class='done'>✓</span> "
+                                f"<span class='node'>{icon} {summary}</span>"
+                            )
+                            for ex in extras:
+                                _push(f"<span class='dim'>{ex}</span>")
+                            pipeline_slot.markdown(
+                                _pipeline_strip(seen, paused=False),
+                                unsafe_allow_html=True,
+                            )
+                            next_node = None
+                            for n in NODE_ORDER:
+                                if n not in seen:
+                                    next_node = n
+                                    break
+                            if next_node:
+                                running_slot.markdown(
+                                    _running_banner(next_node),
+                                    unsafe_allow_html=True,
+                                )
+
+                    def _current_node() -> str | None:
+                        for n in NODE_ORDER:
+                            if n not in seen:
+                                return n
+                        return None
+
+                    cb_handler = StreamlitLogHandler(
+                        push=_push, get_current_node=_current_node
+                    )
+                    approval = {
+                        "decision": "send_back",
+                        "reviewer_note": note,
+                    }
+                    events, new_interrupt, new_snap = _run_async(
+                        _resume_with(
+                            approval,
+                            p["thread_id"],
+                            on_event=on_event,
+                            callbacks=[cb_handler],
+                        )
+                    )
+
+                if new_interrupt is not None:
+                    # Re-checked memo is ready — refresh pending state + rerun.
+                    st.session_state["pending"] = {
+                        "thread_id": p["thread_id"],
+                        "payload": new_interrupt,
+                        "snap": new_snap,
+                    }
+                    st.success(
+                        "↩  Re-checked memo is ready — refreshing view…"
+                    )
+                    st.rerun()
+                else:
+                    # No new interrupt: graph routed to END (e.g. revision cap hit).
+                    st.warning(
+                        "Audit terminated after re-check (no new HITL pause). "
+                        "This usually means the revision limit was reached."
+                    )
+                    if "pending" in st.session_state:
+                        del st.session_state["pending"]
+
+        # ── Reject ──────────────────────────────────────────────────────
         if c3.button("❌  Reject", use_container_width=True):
             approval = {"decision": "reject", "reviewer_note": note}
             _run_async(_resume_with(approval, p["thread_id"]))
