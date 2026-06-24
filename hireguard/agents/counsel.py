@@ -10,7 +10,11 @@ Design decisions (defend these in viva):
   2. The LLM writes only the prose it is good at: the executive summary and the
      fix wording. We then overwrite the structured/numeric fields with the
      code-computed truth and re-attach the real `scored_findings` list.
-  3. If no ANTHROPIC_API_KEY is set (CI, keyless dev) OR the LLM call fails, we
+  3. **LLM tool-calling is wired here.** Counsel is bound to two LangChain tools
+     (`verify_statute_currency`, `web_search`) via `llm.bind_tools(...)`. The
+     LLM decides whether to call them — typically 0-2 calls per memo, capped at
+     3 rounds. This is the system's real agentic-tool-use surface.
+  4. If no ANTHROPIC_API_KEY is set (CI, keyless dev) OR the LLM call fails, we
      fall back to a deterministic memo so the graph still runs end-to-end. The
      audit never hard-blocks on the memo writer.
 
@@ -24,6 +28,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
+
 from hireguard.llm import get_claude
 from hireguard.settings import settings
 from hireguard.state import (
@@ -32,6 +44,8 @@ from hireguard.state import (
     RecommendedFix,
     ScoredFinding,
 )
+from hireguard.tools.statute_lookup import verify_statute_currency
+from hireguard.tools.web_search import web_search
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +63,12 @@ _PRIORITY_BY_SEVERITY = {
     "medium": "should_fix",
     "low": "nice_to_fix",
 }
+
+# ─── LLM tool-calling configuration ────────────────────────────────────────
+COUNSEL_TOOLS = [verify_statute_currency, web_search]
+TOOL_MAP = {t.name: t for t in COUNSEL_TOOLS}
+# Cap the LLM's tool-call rounds so an agent can't loop forever on retries.
+MAX_TOOL_ROUNDS = 3
 
 
 def _counts(scored: list[ScoredFinding]) -> dict[str, int]:
@@ -168,6 +188,111 @@ def _align_fixes(
     return aligned
 
 
+# ─── Phase 1: tool-calling reasoning loop ──────────────────────────────────
+async def _reason_with_tools(
+    scored: list[ScoredFinding],
+    errors: list[str],
+) -> list[BaseMessage]:
+    """Phase 1: let the LLM reason over the findings, optionally calling tools
+    to gather external context. Returns the full accumulated message history,
+    which Phase 2 will use to produce the typed memo.
+
+    The LLM is bound to:
+      - verify_statute_currency  (Tavily statute-freshness check)
+      - web_search               (Tavily generic web search)
+
+    Each tool call is logged to `errors` (which becomes the run's notes channel,
+    visible in the trace + the HITL panel).
+    """
+    user_msg = (
+        f"# SCORED FINDINGS ({len(scored)} total)\n\n"
+        f"{_findings_digest(scored)}\n\n"
+        "You MAY call your available tools (verify_statute_currency, web_search) "
+        "to gather external context BEFORE drafting the memo — but only when the "
+        "finding is critical/high severity OR the citation references a statute "
+        "you are unsure is still current. Use tools sparingly; cap at ~2-3 calls "
+        "total per memo. After tool calls (or if none were needed), respond with "
+        "your reasoning — the system will then ask you to produce the structured "
+        "AuditMemo."
+    )
+    messages: list[BaseMessage] = [
+        SystemMessage(content=SYSTEM_PROMPT),
+        HumanMessage(content=user_msg),
+    ]
+
+    llm_with_tools = get_claude().bind_tools(COUNSEL_TOOLS)
+
+    total_tool_calls = 0
+    for round_n in range(MAX_TOOL_ROUNDS):
+        response: AIMessage = await llm_with_tools.ainvoke(messages)
+        messages.append(response)
+        tool_calls = getattr(response, "tool_calls", None) or []
+        if not tool_calls:
+            log.info(
+                "counsel_node: tool-reasoning ended after %d round(s), "
+                "total tool calls=%d",
+                round_n + 1,
+                total_tool_calls,
+            )
+            break
+        for tc in tool_calls:
+            name = tc.get("name", "")
+            args = tc.get("args", {}) or {}
+            tool = TOOL_MAP.get(name)
+            total_tool_calls += 1
+            log.info(
+                "counsel_node: LLM tool call #%d → %s(%s)",
+                total_tool_calls,
+                name,
+                str(args)[:120],
+            )
+            if tool is None:
+                tool_out = f"unknown tool: {name}"
+                errors.append(f"[counsel_node] LLM tried unknown tool {name!r}")
+            else:
+                try:
+                    tool_out = await tool.ainvoke(args)
+                except Exception as exc:  # noqa: BLE001 — tools must never crash
+                    tool_out = (
+                        f"tool error: {type(exc).__name__}: {str(exc)[:120]}"
+                    )
+                    errors.append(
+                        f"[counsel_node] tool {name} errored: {type(exc).__name__}"
+                    )
+            messages.append(
+                ToolMessage(
+                    content=str(tool_out),
+                    tool_call_id=tc.get("id", f"call-{total_tool_calls}"),
+                )
+            )
+
+    if total_tool_calls:
+        errors.append(
+            f"[counsel_node] LLM made {total_tool_calls} tool call(s) via "
+            f"bind_tools (web_search / verify_statute_currency)"
+        )
+    return messages
+
+
+# ─── Phase 2: structured-output memo draft ─────────────────────────────────
+async def _draft_memo(messages: list[BaseMessage]) -> AuditMemo:
+    """Phase 2: take the accumulated reasoning history (including any tool
+    results) and produce the typed AuditMemo via with_structured_output.
+    """
+    final_prompt = HumanMessage(
+        content=(
+            "Now produce the final AuditMemo as a structured object. "
+            "Include the executive_summary (3-5 sentences, plain English, no "
+            "statute numbers in prose) and ONE recommended_fix per finding "
+            "(copy each finding_id exactly). Counts and re_review flags will "
+            "be recomputed by the system — focus on clear prose grounded in "
+            "the reasoning above."
+        )
+    )
+    llm_typed = get_claude().with_structured_output(AuditMemo)
+    return await llm_typed.ainvoke(messages + [final_prompt])
+
+
 async def counsel_node(state: PipelineState) -> dict:
     scored = state.scored_findings
     counts = _counts(scored)
@@ -182,22 +307,22 @@ async def counsel_node(state: PipelineState) -> dict:
 
     if has_key:
         try:
-            llm = get_claude().with_structured_output(AuditMemo)
-            user_msg = (
-                f"# SCORED FINDINGS ({n} total)\n\n"
-                f"{_findings_digest(scored)}\n\n"
-                "Write the executive_summary and one recommended_fix per finding "
-                "(copy each finding_id exactly). The system will recompute all "
-                "counts and the re-review flag — focus on clear prose."
+            # Phase 1: reasoning + (optional) tool calls
+            messages = await _reason_with_tools(scored, errors)
+            # Phase 2: forced structured output
+            draft: AuditMemo = await _draft_memo(messages)
+            summary = draft.executive_summary.strip() or _deterministic_summary(
+                counts, n
             )
-            draft: AuditMemo = await llm.ainvoke(
-                [("system", SYSTEM_PROMPT), ("user", user_msg)]
-            )
-            summary = draft.executive_summary.strip() or _deterministic_summary(counts, n)
             fixes = _align_fixes(draft.recommended_fixes, scored)
-        except Exception as exc:  # noqa: BLE001 — memo writer must never crash the audit
-            log.warning("counsel_node: LLM call failed (%s); using deterministic memo", exc)
-            errors.append(f"[counsel_node] LLM unavailable, used deterministic memo: {exc}")
+        except Exception as exc:  # noqa: BLE001 — memo writer must never crash
+            log.warning(
+                "counsel_node: LLM call failed (%s); using deterministic memo",
+                exc,
+            )
+            errors.append(
+                f"[counsel_node] LLM unavailable, used deterministic memo: {exc}"
+            )
             summary = _deterministic_summary(counts, n)
             fixes = _deterministic_fixes(scored)
     else:
