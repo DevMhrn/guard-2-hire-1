@@ -47,6 +47,29 @@ _QUERY_SEED = (
     "native language local subjective culture fit recruitment discrimination"
 )
 
+# Maps each India-specific IntakeFacts signal field (populated with exact quotes
+# by the Intake agent) to the rule it evidences. Lets Policy cite a violation
+# directly from the structured facts, even when the posting's wording does not
+# match a detection hint verbatim (e.g. "Maharashtra domicile" -> IND-DOMICILE-LANGUAGE).
+_SIGNAL_RULE_MAP = {
+    "gender_restrictive_phrases": "IND-GENDER-CODED",
+    "caste_or_community_signals": "IND-CASTE-RELIGION",
+    "marital_or_pregnancy_signals": "IND-MATERNITY-MARITAL",
+    "medical_or_hiv_test_signals": "IND-HIV-MEDICAL",
+    "non_essential_physical_requirements": "IND-DISABILITY-RPWD",
+    "domicile_or_language_restriction": "IND-DOMICILE-LANGUAGE",
+    "age_coded_phrases": "IND-AGE-BAR",
+    "subjective_scorecard_criteria": "IND-SUBJECTIVE-CRITERIA",
+}
+
+
+def _signal_phrases(facts: IntakeFacts) -> list[str]:
+    """All exact phrases Intake lifted across the India signal fields."""
+    out: list[str] = []
+    for field in _SIGNAL_RULE_MAP:
+        out += [p for p in (getattr(facts, field, []) or []) if p]
+    return out
+
 
 class PolicyFindings(BaseModel):
     """Bag model — `with_structured_output` is more reliable with a wrapper than
@@ -62,8 +85,7 @@ class PolicyFindings(BaseModel):
 
 def build_query(facts: IntakeFacts) -> str:
     """Turn the extracted facts into a retrieval query for semantic matching."""
-    parts: list[str] = list(facts.age_coded_phrases)
-    parts += list(facts.subjective_scorecard_criteria)
+    parts: list[str] = _signal_phrases(facts)
     if facts.notes:
         parts.append(facts.notes)
     parts.append(_QUERY_SEED)
@@ -93,12 +115,14 @@ def _packet_context(packet: HiringPacket) -> str:
 
 
 def _facts_context(facts: IntakeFacts) -> str:
-    return (
-        f"jurisdiction: {facts.jurisdiction}\n"
-        f"age_coded_phrases: {facts.age_coded_phrases}\n"
-        f"subjective_scorecard_criteria: {facts.subjective_scorecard_criteria}\n"
-        f"notes: {facts.notes}\n"
-    )
+    lines = [f"jurisdiction: {facts.jurisdiction}"]
+    for field in _SIGNAL_RULE_MAP:
+        vals = getattr(facts, field, []) or []
+        if vals:
+            lines.append(f"{field}: {vals}")
+    if facts.notes:
+        lines.append(f"notes: {facts.notes}")
+    return "\n".join(lines) + "\n"
 
 
 def _rules_context(rules: list[dict]) -> str:
@@ -147,11 +171,28 @@ def _segments(packet: HiringPacket) -> list[str]:
 
 
 def _heuristic_findings(facts: IntakeFacts, packet: HiringPacket, rules: list[dict]) -> list[Finding]:
+    by_rule = {r["rule_id"]: r for r in rules}
     segments = _segments(packet)
     hay = " \n ".join(segments)
-    findings: list[Finding] = []
+    found: dict[str, Finding] = {}
 
+    # Pass 1 — facts-driven: use the exact phrases Intake lifted (best evidence).
+    for field, rule_id in _SIGNAL_RULE_MAP.items():
+        phrases = [p for p in (getattr(facts, field, []) or []) if p]
+        if phrases and rule_id in by_rule and rule_id not in found:
+            r = by_rule[rule_id]
+            found[rule_id] = Finding(
+                rule_id=rule_id,
+                citation=r["citation"],
+                evidence_quote=("; ".join(phrases))[:500],
+                evidence_quality=0.95,
+                rationale=f"{r['title']} — Intake flagged: {phrases[0]}",
+            )
+
+    # Pass 2 — posting-text hint match (recall-first; catches what Intake missed).
     for r in rules:
+        if r["rule_id"] in found:
+            continue
         evidence: Optional[str] = None
         for hint in r["detection_hints"]:
             if _phrase_in(hint, hay):
@@ -162,16 +203,14 @@ def _heuristic_findings(facts: IntakeFacts, packet: HiringPacket, rules: list[di
                 break
         if evidence is None:
             continue
-        findings.append(
-            Finding(
-                rule_id=r["rule_id"],
-                citation=r["citation"],
-                evidence_quote=evidence[:500],
-                evidence_quality=0.9,
-                rationale=f"{r['title']} — packet text matches a detection hint for this rule.",
-            )
+        found[r["rule_id"]] = Finding(
+            rule_id=r["rule_id"],
+            citation=r["citation"],
+            evidence_quote=evidence[:500],
+            evidence_quality=0.9,
+            rationale=f"{r['title']} — packet text matches a detection hint for this rule.",
         )
-    return findings
+    return list(found.values())
 
 
 # ──────────────────────────────────────────────────────────────────────────────
