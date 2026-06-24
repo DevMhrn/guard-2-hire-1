@@ -1,0 +1,26 @@
+{
+  "packet_id": "pune_clean_finance_role",
+  "company": "Sahyadri Financial Services Pvt. Ltd.",
+  "company_size": 460,
+  "primary_work_location": "Pune, Maharashtra",
+  "_planted_violations_for_demo": [
+    "CLEAN PACKET — expected verdict: no Critical issues. May surface at most a minor Gap/Suggestion."
+  ],
+  "job_posting": "Senior Finance Analyst — Sahyadri Financial Services Pvt. Ltd. (Pune, Maharashtra; hybrid)\n\nSahyadri is hiring a Senior Finance Analyst to support our SME-lending business. The analyst will own portfolio-level reporting, partner with the risk and product teams on pricing, and present quarterly performance to leadership.\n\nResponsibilities: build and maintain financial models for the lending book, partner with risk on portfolio stress tests, support audit and regulatory submissions to RBI, run the monthly cohort review.\nRequirements: CA / MBA Finance / CFA Level II or higher; 5-8 years in NBFC, bank, or financial-services consulting; advanced Excel + SQL; comfort with Tableau or Power BI.\n\nSelection is based strictly on demonstrated skill and job-relevant experience. Sahyadri is an equal-opportunity employer; we welcome applications from candidates of every background, and we provide reasonable accommodations as required under applicable law.\n\nCompensation: ₹22,00,000 – ₹32,00,000 per annum (CTC) inclusive of variable pay, plus Provident Fund, gratuity, group medical cover for self and family, 22 days of paid leave, and a hybrid work policy.",
+  "comp_band": {
+    "currency": "INR",
+    "posted_range_in_listing": { "min": 2200000, "max": 3200000 },
+    "internal_band_min": 2200000,
+    "internal_band_max": 3200000,
+    "benefits_described_in_listing": true
+  },
+  "interview_scorecard": {
+    "title": "Senior Finance Analyst Interview Rubric",
+    "criteria": [
+      { "name": "Financial modelling depth", "scale": "1-5", "anchored": true },
+      { "name": "Domain (NBFC / lending) knowledge", "scale": "1-5", "anchored": true },
+      { "name": "Stakeholder communication", "scale": "1-5", "anchored": true },
+      { "name": "Excel + SQL proficiency", "scale": "1-5", "anchored": true }
+    ]
+  }
+}

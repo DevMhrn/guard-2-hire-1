@@ -657,22 +657,74 @@ with tab_run:
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button(
-            "🚨 Dirty packet — Acme (Bengaluru)",
+            "🚨  Dirty packet — Acme (Bengaluru)",
             use_container_width=True,
             help="7 planted violations across gender, caste, marital, RPwD, HIV, age, subjective",
         ):
             st.session_state["selected_sample"] = "acme_se_role"
     with col_b:
         if st.button(
-            "✅ Clean packet — Northwind (Hyderabad)",
+            "✅  Clean packet — Northwind (Hyderabad)",
             use_container_width=True,
             help="Compliant Indian PM role; expected verdict PASS",
         ):
             st.session_state["selected_sample"] = "northwind_pm_role"
 
-    # Dropdown for other / custom
+    # More cases — chip strip
+    st.caption("More cases")
+    other_cases = [
+        (
+            "mumbai_factory_role",
+            "🏭  Mumbai factory",
+            "Maharashtra domicile + transgender exclusion + RPwD overreach",
+        ),
+        (
+            "chennai_sales_role",
+            "💼  Chennai sales",
+            "Gender-coded title + pay-parity violation",
+        ),
+        (
+            "delhi_startup_role",
+            "🚀  Delhi startup",
+            "Soft rules only — age-bar + culture-fit; tests calibrated medium ceiling",
+        ),
+        (
+            "bengaluru_internship_role",
+            "📝  Bengaluru internship",
+            "Maternity / marital restriction + age bar",
+        ),
+        (
+            "kolkata_injection_role",
+            "🪤  Prompt injection",
+            "Posting tries to subvert the auditor; real violations must still surface",
+        ),
+        (
+            "gurgaon_frontdesk_role",
+            "🛎  Front-desk scorecard",
+            "Clean JD; ALL violations live in the interview scorecard — demonstrates rubric audit",
+        ),
+        (
+            "pune_clean_finance_role",
+            "🟢  Pune clean (finance)",
+            "Second clean variant — Pune, finance industry",
+        ),
+    ]
+    cols = st.columns(3)
+    for i, (key, label, helptxt) in enumerate(other_cases):
+        if key not in sample_files:
+            continue
+        with cols[i % 3]:
+            if st.button(
+                label,
+                key=f"qp-{key}",
+                use_container_width=True,
+                help=helptxt,
+            ):
+                st.session_state["selected_sample"] = key
+
+    # Dropdown / custom
     choice = st.selectbox(
-        "or pick another",
+        "or pick from full list",
         sample_files + ["(custom JSON)"],
         index=(
             sample_files.index(st.session_state["selected_sample"])

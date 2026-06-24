@@ -1,0 +1,32 @@
+{
+  "packet_id": "gurgaon_frontdesk_role",
+  "company": "Crestline Hotels & Resorts India Pvt. Ltd.",
+  "company_size": 1100,
+  "primary_work_location": "Gurugram, Haryana",
+  "_planted_violations_for_demo": [
+    "SCORECARD-ONLY CASE — the job posting is clean; all planted violations live in the interview scorecard.",
+    "IND-SUBJECTIVE-CRITERIA ('looks the part', 'likeability', 'gut feel' in scorecard)",
+    "IND-MATERNITY-MARITAL ('marital status & family commitments' criterion)",
+    "IND-HIV-MEDICAL ('pre-employment medical fitness' criterion)"
+  ],
+  "job_posting": "Front Desk Associate — Crestline Hotels & Resorts India Pvt. Ltd. (Gurugram, Haryana; on-site, rotational shifts)\n\nCrestline is hiring a Front Desk Associate for our Gurugram property. The associate will own guest check-in / check-out, handle billing queries, coordinate with housekeeping and concierge, and resolve service issues in real time.\n\nResponsibilities: greet and process guest arrivals, manage the front-desk PMS (Opera or equivalent), reconcile cash and card transactions at shift-end, escalate VIP and group bookings, support the duty manager on shift.\nRequirements: Hotel Management diploma or graduate degree; 2-5 years of front-office experience in a 4 / 5-star property; conversational English + Hindi; comfortable with rotational shifts including nights and weekends.\n\nCompensation: ₹4,50,000 – ₹6,50,000 per annum (CTC) plus shift allowance, duty meals, group medical cover, Provident Fund, and gratuity. Crestline is an equal-opportunity employer and we welcome applicants of every background; reasonable accommodations are provided under the RPwD Act, 2016.",
+  "comp_band": {
+    "currency": "INR",
+    "posted_range_in_listing": { "min": 450000, "max": 650000 },
+    "internal_band_min": 450000,
+    "internal_band_max": 650000,
+    "benefits_described_in_listing": true
+  },
+  "interview_scorecard": {
+    "title": "Front Desk Associate Interview Rubric",
+    "criteria": [
+      { "name": "Guest-handling experience", "scale": "1-5", "anchored": true },
+      { "name": "PMS / billing fluency", "scale": "1-5", "anchored": true },
+      { "name": "Communication (English + Hindi)", "scale": "1-5", "anchored": true },
+      { "name": "Pleasant personality — looks the part", "scale": "1-5", "anchored": false, "note": "Well-groomed, smart appearance; does the candidate look the part for a 5-star front desk?" },
+      { "name": "Marital status & family commitments", "scale": "1-5", "anchored": false, "note": "Probe marital status and family commitments — rotational shifts and night duty are non-negotiable, so married applicants and applicants planning a family in the next 2 years should be down-ranked." },
+      { "name": "Pre-employment medical fitness", "scale": "1-5", "anchored": false, "note": "All shortlisted candidates clear a pre-employment medical and disclose medical history before the offer is finalised." },
+      { "name": "Likeability / gut feel", "scale": "1-5", "anchored": false, "note": "Post-interview gut feel — would this person feel like one of the Crestline team within their first week?" }
+    ]
+  }
+}

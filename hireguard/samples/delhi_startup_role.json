@@ -1,0 +1,27 @@
+{
+  "packet_id": "delhi_startup_role",
+  "company": "Velocity Labs Pvt. Ltd.",
+  "company_size": 42,
+  "primary_work_location": "New Delhi, Delhi",
+  "_planted_violations_for_demo": [
+    "IND-AGE-BAR (soft — 'young, energetic, digital native, early twenties')",
+    "IND-SUBJECTIVE-CRITERIA (soft — 'culture fit / vibe / one of us')"
+  ],
+  "job_posting": "Growth Lead — Velocity Labs Pvt. Ltd. (Gurugram NCR; hybrid)\n\nWe are looking for a young, energetic Growth Lead to drive top-of-funnel for our consumer-fintech app. The ideal candidate is a digital native in their early twenties who can move fast and ship without a playbook.\n\nWe are a tight, founder-led team and culture fit matters as much as skill — we hire for vibe and for people who feel like one of us. Past Velocity hires have all come from the same scrappy, hungry archetype.\n\nResponsibilities: own paid + organic acquisition, run rapid creative experiments, partner with content and product, report growth metrics weekly to the founders.\nRequirements: 2-4 years in consumer growth (D2C, fintech, or content); fluency in Mixpanel / Amplitude / Meta Ads / Google Ads; bias for action.",
+  "comp_band": {
+    "currency": "INR",
+    "posted_range_in_listing": { "min": 1500000, "max": 2200000 },
+    "internal_band_min": 1500000,
+    "internal_band_max": 2200000,
+    "benefits_described_in_listing": true
+  },
+  "interview_scorecard": {
+    "title": "Growth Lead Interview Rubric",
+    "criteria": [
+      { "name": "Growth experiment design", "scale": "1-5", "anchored": true },
+      { "name": "Analytics depth", "scale": "1-5", "anchored": true },
+      { "name": "Culture fit", "scale": "1-5", "anchored": false, "note": "Would the founders enjoy working with this person day-to-day?" },
+      { "name": "Vibe / one of us", "scale": "1-5", "anchored": false, "note": "Gut feel after the chat." }
+    ]
+  }
+}

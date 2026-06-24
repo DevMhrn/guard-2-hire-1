@@ -38,6 +38,48 @@ def test_load_northwind_sample():
     assert p.packet_id == "northwind_pm_role"
 
 
+def test_all_samples_parse_and_are_indian():
+    """Every shipping sample packet must load cleanly + be in Indian context.
+
+    Guards against the kind of US-vs-India drift we hit during the pivot.
+    """
+    from pathlib import Path
+
+    samples = sorted(Path("hireguard/samples").glob("*.json"))
+    assert len(samples) >= 9, f"expected at least 9 sample packets, found {len(samples)}"
+
+    indian_state_markers = (
+        "Karnataka", "Maharashtra", "Tamil Nadu", "Telangana", "Andhra Pradesh",
+        "Delhi", "Kerala", "Gujarat", "Uttar Pradesh", "West Bengal",
+        "Rajasthan", "Punjab", "Haryana", "Madhya Pradesh", "Bihar", "Odisha",
+        "Assam", "Goa", "Jharkhand", "Chhattisgarh", "Uttarakhand",
+        "Himachal Pradesh", "Jammu", "Chandigarh", "Puducherry",
+        "India",
+    )
+    for path in samples:
+        packet = load_packet(str(path))
+        assert isinstance(packet, HiringPacket)
+        # Indian context: location must reference an Indian state
+        assert any(m in packet.primary_work_location for m in indian_state_markers), (
+            f"{path.name}: primary_work_location {packet.primary_work_location!r} "
+            f"does not look Indian"
+        )
+        # Currency must be INR (the project pivoted on 2026-06-24)
+        assert packet.comp_band.currency == "INR", (
+            f"{path.name}: currency must be INR, got {packet.comp_band.currency!r}"
+        )
+        # If violations are planted, they should be IND-* rule_ids or known markers
+        planted = packet.planted_violations_for_demo or []
+        for v in planted:
+            tok = v.split(" ", 1)[0]
+            assert tok.startswith(
+                ("IND-", "CLEAN", "PROMPT-INJECTION", "SCORECARD-ONLY")
+            ), (
+                f"{path.name}: planted token {tok!r} is not "
+                "IND-*/CLEAN/PROMPT-INJECTION/SCORECARD-ONLY"
+            )
+
+
 # ─── Field-level validation ──────────────────────────────────────────────────
 
 

@@ -1,0 +1,27 @@
+{
+  "packet_id": "chennai_sales_role",
+  "company": "South Star Auto Components Pvt. Ltd.",
+  "company_size": 180,
+  "primary_work_location": "Chennai, Tamil Nadu",
+  "_planted_violations_for_demo": [
+    "IND-GENDER-CODED (uses 'salesman' as job title + 'he will' phrasing)",
+    "IND-PAY-PARITY (different pay for men vs women; 'salary as per gender')"
+  ],
+  "job_posting": "Salesman — South Star Auto Components Pvt. Ltd. (Chennai, Tamil Nadu; field role)\n\nWe are hiring a Salesman to cover the Tamil Nadu dealer network. The salesman will own his territory P&L and report directly to the Regional Head — he will travel four days a week and be on call with dealers on weekends.\n\nCompensation is structured with different pay for men and women based on field-availability assumptions: the male rate is ₹65,000 per month base + commission, and the female rate is ₹50,000 per month base + commission. Salary as per gender; this is non-negotiable.\n\nResponsibilities: own dealer relationships in assigned districts, hit monthly targets, file weekly reports, escalate channel conflicts.\nRequirements: B.Com / BBA; 3-7 years of B2B field sales; comfortable with extensive travel; two-wheeler licence mandatory.",
+  "comp_band": {
+    "currency": "INR",
+    "posted_range_in_listing": null,
+    "internal_band_min": 600000,
+    "internal_band_max": 900000,
+    "benefits_described_in_listing": false
+  },
+  "interview_scorecard": {
+    "title": "Field Sales Interview Rubric",
+    "criteria": [
+      { "name": "Channel sales experience", "scale": "1-5", "anchored": true },
+      { "name": "Target attainment history", "scale": "1-5", "anchored": true },
+      { "name": "Negotiation skill", "scale": "1-5", "anchored": true },
+      { "name": "Travel willingness", "scale": "1-5", "anchored": true }
+    ]
+  }
+}

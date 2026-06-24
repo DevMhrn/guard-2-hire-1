@@ -1,0 +1,28 @@
+{
+  "packet_id": "mumbai_factory_role",
+  "company": "Bharat Industrial Castings Pvt. Ltd.",
+  "company_size": 520,
+  "primary_work_location": "Mumbai, Maharashtra",
+  "_planted_violations_for_demo": [
+    "IND-DOMICILE-LANGUAGE (Maharashtra domicile required, Marathi mother tongue)",
+    "IND-TRANSGENDER (only male or female applicants — third-gender exclusion)",
+    "IND-DISABILITY-RPWD (able-bodied / physically fit / must be able to lift without accommodation)"
+  ],
+  "job_posting": "Plant Supervisor — Bharat Industrial Castings Pvt. Ltd. (Mumbai, Maharashtra; on-site)\n\nWe are hiring a Plant Supervisor for our Bhiwandi foundry. Candidates must be locals only — Maharashtra domicile required, with Marathi as mother tongue. Only candidates from this state will be considered.\n\nThis role is open to men and women only. We are unable to accommodate applicants outside that binary at this site.\n\nThe role demands an able-bodied candidate who is physically fit and must be able to lift 30 kg ingots routinely across an eight-hour shift. Applicants should be in perfect health with no medical conditions.\n\nResponsibilities: supervise three shifts, enforce safety SOPs, maintain output schedules, coordinate with maintenance.\nRequirements: ITI / B.E. in mechanical or production engineering; 5+ years on a foundry shop floor; familiarity with TPM and 5S.",
+  "comp_band": {
+    "currency": "INR",
+    "posted_range_in_listing": null,
+    "internal_band_min": 900000,
+    "internal_band_max": 1400000,
+    "benefits_described_in_listing": false
+  },
+  "interview_scorecard": {
+    "title": "Plant Supervisor Interview Rubric",
+    "criteria": [
+      { "name": "Shop-floor experience", "scale": "1-5", "anchored": true },
+      { "name": "Safety / compliance mindset", "scale": "1-5", "anchored": true },
+      { "name": "Team management", "scale": "1-5", "anchored": true },
+      { "name": "Marathi fluency", "scale": "1-5", "anchored": true, "note": "Required for shop-floor instruction." }
+    ]
+  }
+}

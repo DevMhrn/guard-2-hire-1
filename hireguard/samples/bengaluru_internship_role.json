@@ -1,0 +1,27 @@
+{
+  "packet_id": "bengaluru_internship_role",
+  "company": "Kavi Media House Pvt. Ltd.",
+  "company_size": 35,
+  "primary_work_location": "Bengaluru, Karnataka",
+  "_planted_violations_for_demo": [
+    "IND-MATERNITY-MARITAL (single only / unmarried only)",
+    "IND-AGE-BAR (fresh graduate only / under 25 / age limit)"
+  ],
+  "job_posting": "Marketing Intern — Kavi Media House Pvt. Ltd. (Bengaluru, Karnataka; six-month internship)\n\nKavi Media House is hiring a Marketing Intern to support our content and partnerships team. We can only consider single only / unmarried only applicants for this role — internship hours are unpredictable and recently married candidates struggle with the schedule.\n\nThis is a fresh graduate only opening, age limit under 25. We prefer recent grads who are between two and three months post their final-year exams.\n\nResponsibilities: support content calendar planning, schedule influencer outreach, draft briefs, attend partner shoots on weekends.\nRequirements: BMM / BBA / BA(Hons) completed in the last 6 months; comfortable in Notion + Google Workspace; portfolio of student-org marketing work preferred.",
+  "comp_band": {
+    "currency": "INR",
+    "posted_range_in_listing": { "min": 25000, "max": 25000 },
+    "internal_band_min": 25000,
+    "internal_band_max": 25000,
+    "benefits_described_in_listing": false
+  },
+  "interview_scorecard": {
+    "title": "Marketing Intern Interview Rubric",
+    "criteria": [
+      { "name": "Writing sample quality", "scale": "1-5", "anchored": true },
+      { "name": "Portfolio relevance", "scale": "1-5", "anchored": true },
+      { "name": "Tool fluency (Notion / GSuite)", "scale": "1-5", "anchored": true },
+      { "name": "Weekend availability", "scale": "1-5", "anchored": true }
+    ]
+  }
+}
