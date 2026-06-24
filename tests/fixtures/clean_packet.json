@@ -1,17 +1,17 @@
 {
   "packet_id": "clean_control",
-  "company": "Evergreen Data Co.",
+  "company": "Evergreen Data Technologies Pvt. Ltd.",
   "company_size": 85,
-  "primary_work_location": "Austin, TX",
+  "primary_work_location": "Bengaluru, Karnataka",
   "_planted_violations_for_demo": [
     "CLEAN PACKET — expected verdict: no Critical issues."
   ],
-  "job_posting": "Data Analyst — Evergreen Data Co. (Austin, TX; hybrid)\n\nEvergreen Data is hiring a Data Analyst to support our analytics team. You'll build dashboards, run analyses, and partner with stakeholders to inform decisions.\n\nResponsibilities: analyze datasets, build reports, collaborate cross-functionally.\nRequirements: demonstrated experience with SQL and a BI tool; strong written and verbal communication. We evaluate candidates on job-related competencies and provide reasonable accommodations throughout the hiring process.\n\nSalary range: $95,000-$120,000 plus equity, medical/dental/vision, 401(k) match, and 18 days PTO. We are an equal-opportunity employer and welcome applicants of all backgrounds.",
+  "job_posting": "Data Analyst — Evergreen Data Technologies Pvt. Ltd. (Bengaluru, Karnataka; hybrid)\n\nEvergreen Data is hiring a Data Analyst to support our analytics team. You'll build dashboards, run analyses, and partner with stakeholders to inform decisions.\n\nResponsibilities: analyze datasets, build reports, collaborate cross-functionally.\nRequirements: demonstrated experience with SQL and a BI tool; strong written and verbal communication. We evaluate candidates only on job-related competencies and provide reasonable accommodations to persons with disabilities throughout the hiring process, in line with the RPwD Act, 2016.\n\nSalary range: ₹12,00,000-₹16,00,000 per annum plus medical insurance, provident fund, and 24 days paid leave. We are an equal-opportunity employer and welcome applicants of all genders, castes, religions, and backgrounds.",
   "comp_band": {
-    "currency": "USD",
-    "posted_range_in_listing": { "min": 95000, "max": 120000 },
-    "internal_band_min": 95000,
-    "internal_band_max": 120000,
+    "currency": "INR",
+    "posted_range_in_listing": { "min": 1200000, "max": 1600000 },
+    "internal_band_min": 1200000,
+    "internal_band_max": 1600000,
     "benefits_described_in_listing": true
   },
   "interview_scorecard": {

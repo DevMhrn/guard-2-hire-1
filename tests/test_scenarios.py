@@ -51,22 +51,43 @@ _NON_RULE_MARKERS = ("CLEAN", "PROMPT-INJECTION")
 def _expected_rule_ids(packet) -> set[str]:
     """Derive the rule_id tokens from a packet's planted-violation gold labels.
 
-    "EEOC-ADEA-AGE (young, energetic, ...)" -> "EEOC-ADEA-AGE"
-    Clean-packet / prompt-injection markers are excluded.
+    "IND-GENDER-CODED (asks for male candidates only)" -> "IND-GENDER-CODED"
+    Non-rule markers (clean-packet notes, the prompt-injection marker) are excluded
+    so the fake Policy node never emits a rule_id that isn't in the real ruleset.
     """
     ids: set[str] = set()
     for entry in packet.planted_violations_for_demo or []:
-        if any(m in entry.upper() for m in ("CLEAN PACKET", "CLEAN —", "CLEAN ")):
+        if any(m in entry.upper() for m in _NON_RULE_MARKERS):
             continue
         token = entry.split(" (")[0].split(" —")[0].strip()
         ids.add(token)
     return ids
 
 
+# Indian jurisdiction codes by state/UT name fragment (mock-side only).
+_JURISDICTION_BY_LOCATION = {
+    "karnataka": "KA",
+    "maharashtra": "MH",
+    "delhi": "DL",
+    "tamil nadu": "TN",
+}
+
+
+def _jurisdiction_for(packet) -> str:
+    """Rough jurisdiction code from the packet's work location (Indian ruleset)."""
+    loc = (packet.primary_work_location or "").lower()
+    if "remote" in loc:
+        return "India-Central"
+    for fragment, code in _JURISDICTION_BY_LOCATION.items():
+        if fragment in loc:
+            return code
+    return "IN"
+
+
 async def _fake_intake(state: PipelineState) -> dict:
     return {
         "facts": IntakeFacts(
-            jurisdiction="CA",
+            jurisdiction=_jurisdiction_for(state.packet),
             pay_range_disclosed=False,
             benefits_disclosed=False,
             salary_history_question_present=True,
